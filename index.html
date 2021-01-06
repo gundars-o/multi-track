@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Audio File Loader</title>
+    <meta name="description" content="A way to make sure files have loaded before playing them">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<link rel="stylesheet" type="text/css" href="./style.css">
+</head>
+<body>
+    <!--
+        Some browsers' autoplay policy requires that an AudioContext be initialized
+        during an input event in order to correctly synchronize.
+        So provide a simple button to get things started.
+    -->
+    <button id="startbutton">Press to load tracks</button>
+    <div class="wrapper">
+        <section id="tracks">
+            <ul>
+            <li data-loading="true">
+                <a href="./leadguitar.mp3" class="track">Lead Guitar</a>
+                <p class="loading-text">Loading...</p>
+                <button data-playing="false" aria-describedby="guitar-play-label" class="playbutton" data-ended="true">
+                <span id="guitar-play-label">Play</span>
+                </button>
+            </li>
+            <li data-loading="true">
+                <a href="./bassguitar.mp3" class="track">Bass Guitar</a>
+                <p class="loading-text">Loading...</p>
+                <button data-playing="false" aria-describedby="bass-play-label" class="playbutton" data-ended="true">
+                <span id="bass-play-label">Play</span>
+                </button>
+            </li>
+            <li data-loading="true">
+                <a href="./drums.mp3" class="track">Drums</a>
+                <p class="loading-text">Loading...</p>
+                <button data-playing="false" aria-describedby="drums-play-label" class="playbutton" data-ended="true">
+                <span id="drums-play-label">Play</span>
+                </button>
+            </li>
+            <li data-loading="true">
+                <a href="./horns.mp3" class="track">Horns</a>
+                <p class="loading-text">Loading...</p>
+                <button data-playing="false" aria-describedby="horns-play-label" class="playbutton" data-ended="true">
+                <span id="horns-play-label">Play</span>
+                </button>
+            </li>
+            <li data-loading="true">
+                <a href="./clav.mp3" class="track">Clavi</a>
+                <p class="loading-text">Loading...</p>
+                <button data-playing="false" aria-describedby="clavi-play-label" class="playbutton" data-ended="true">
+                <span id="clavi-play-label">Play</span>
+                </button>
+            </li>
+            </ul>
+            <p class="sourced">All tracks sourced from <a href="http://jplayer.org/">jplayer.org</a></p>
+        </section>
+    </div><!-- wrapper -->
+    <script type="text/javascript">
+        devOffset = 70;
+        console.clear();
+        // for cross browser compatibility
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+        // Provide a start button so demo can load tracks from an event handler for cross-browser compatibility
+        const startButton = document.querySelector( '#startbutton' );
+        // select all list elements
+        const trackEls = document.querySelectorAll( 'li' );
+        // Loading ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // function for fetching the audio file and decode the data
+        async function getFile( filepath ) {
+            const response = await fetch( filepath );
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await audioCtx.decodeAudioData( arrayBuffer );
+            return audioBuffer;
+        };
+        // function to call each file and return an array of decoded files
+        async function loadFile( filePath ) {
+            const track = await getFile( filePath );
+            return track;
+        };
+        let offset = 0;
+        let soundBuffers = [];
+        let soundTracks = []/*make tracks global and group in one array*/;
+        // create a buffer, plop in data, connect and play -> modify graph here if required
+        function playTrack( audioBuffer, button ) {
+            const trackSource = audioCtx.createBufferSource();
+            trackSource.buffer = audioBuffer;
+            trackSource.number = audioBuffer.number;
+            trackSource.connect( audioCtx.destination );
+            if ( offset == 0 ) {
+                trackSource.start( 0, devOffset );
+                offset = audioCtx.currentTime;
+                /*Set all tracks "not ended" even if only one of them in reality started.*/
+                trackEls.forEach(
+                    ( el, i ) => {
+                        const playButton = el.querySelector( '.playbutton' );
+                        playButton.dataset.ended = "false";
+                        /*Enable starting tracks again if all tracks has ended.*/
+                        setTimeout(
+                            () => {
+                                playButton.dataset.playing = "false";
+                                playButton.dataset.ended = "true";
+                                let numberOfTracksNotEnded = trackEls.length;
+                                trackEls.forEach(
+                                    ( el ) => {
+                                        if ( el.querySelector( '.playbutton' ).dataset.ended === "true" ) {
+                                            numberOfTracksNotEnded--;
+                                        };
+                                    }
+                                );
+                                if ( numberOfTracksNotEnded === 0 ) {
+                                    offset = 0;
+                                };
+                            },
+                            soundBuffers[ i ].duration * 1000 - devOffset * 1000
+                        );
+                    }
+                );
+            } else {
+                trackSource.start( 0, audioCtx.currentTime - offset + devOffset );
+            };
+            soundTracks[ audioBuffer.number ] = trackSource;
+        };
+        startButton.addEventListener(
+            'click',
+            () => {
+                if ( audioCtx != null ) {
+                    console.log( "audioCtx != null - return" );
+                    return;
+                };
+                console.log( "! ( audioCtx != null ) - continue" );
+                audioCtx = new AudioContext();
+                document.querySelector( "#startbutton" ).hidden = true;
+                trackEls.forEach(
+                    ( el, i ) => {
+                        // get children
+                        const anchor = el.querySelector( 'a' );
+                        const loadText = el.querySelector( 'p' );
+                        const playButton = el.querySelector( '.playbutton' );
+                        // load file
+                        loadFile( anchor.href ).then(
+                            ( track ) => {
+                                // set <li data-loading="true"> to 'false" (string not boolean)
+                                el.dataset.loading = 'false';
+                                // hide loading text
+                                loadText.style.display = 'none';
+                                // show button
+                                playButton.style.display = 'inline-block';
+                                /*Mark audio file*/
+                                track.number = i;
+                                /*Globalize audio data*/
+                                soundBuffers[ i ] = track;
+                                // allow play on click
+                                playButton.addEventListener(
+                                    'click',
+                                    function() {
+                                        // check if context is in suspended state (autoplay policy)
+                                        // playButton.dataset.playing is a string "false" or "true" (not a boolean false of true)
+                                        if ( playButton.dataset.playing === "false" ) {
+                                            // start or resume playing one track
+                                            if ( audioCtx.state === 'suspended' ) {
+                                                audioCtx.resume();
+                                                console.log( "Audio context resumed." );
+                                            };
+                                            console.log( "No Audio context resuming was needed." );
+                                            playTrack( track, /*playButton.dataset.button*/playButton );
+                                            playButton.dataset.playing = true;
+                                        } else {
+                                            // pause playing one track
+                                            soundTracks[ i ].stop();
+                                            playButton.dataset.playing = false;
+                                        };
+                                    }
+                                );
+                            }
+                        );
+                    }
+                );
+            }
+        );
+    </script>
+</body>
+</html>
+<!--
+    The most simple example just starts the audio buffer playing from the beginning — you don't need to specify any parameters in this case:
+    source.start();
+    The following more complex example will, 1 second from now, start playing 10 seconds worth of sound starting 3 seconds into the audio buffer.
+    source.start(audioCtx.currentTime + 1,3,10);
+-->
